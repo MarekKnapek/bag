@@ -1,4 +1,6 @@
 /bag.bin
+/bag_fuzz.bin
+/fuzz_corpus
 
 /vstudio/.vs
 

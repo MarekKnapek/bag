@@ -3,6 +3,7 @@
 #include "check_ret.h"
 
 #include <cassert>
+#include <cstdint> // std::uint64_t
 #include <limits>
 #include <utility> // std::swap
 
