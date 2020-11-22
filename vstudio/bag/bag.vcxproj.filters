@@ -29,6 +29,9 @@
     <ClCompile Include="..\..\src\read_only_memory_mapped_file_linux.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\rosbag.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\check_ret.h">
@@ -47,6 +50,9 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\read_only_memory_mapped_file_linux.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\rosbag.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

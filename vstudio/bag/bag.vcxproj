@@ -38,6 +38,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\src\read_only_memory_mapped_file_windows.cpp" />
+    <ClCompile Include="..\..\src\rosbag.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\check_ret.h" />
@@ -50,6 +51,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="..\..\src\read_only_memory_mapped_file_windows.h" />
+    <ClInclude Include="..\..\src\rosbag.h" />
     <ClInclude Include="..\..\src\scope_exit.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
