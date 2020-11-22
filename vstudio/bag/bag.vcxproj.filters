@@ -17,6 +17,12 @@
     <ClCompile Include="..\..\src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\read_only_memory_mapped_file.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\read_only_memory_mapped_file_windows.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\check_ret.h">
@@ -26,6 +32,12 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\scope_exit.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\read_only_memory_mapped_file.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\read_only_memory_mapped_file_windows.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

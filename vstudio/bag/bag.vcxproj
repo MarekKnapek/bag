@@ -24,10 +24,14 @@
   <ItemGroup>
     <ClCompile Include="..\..\src\check_ret.cpp" />
     <ClCompile Include="..\..\src\main.cpp" />
+    <ClCompile Include="..\..\src\read_only_memory_mapped_file.cpp" />
+    <ClCompile Include="..\..\src\read_only_memory_mapped_file_windows.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\check_ret.h" />
     <ClInclude Include="..\..\src\native.h" />
+    <ClInclude Include="..\..\src\read_only_memory_mapped_file.h" />
+    <ClInclude Include="..\..\src\read_only_memory_mapped_file_windows.h" />
     <ClInclude Include="..\..\src\scope_exit.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
