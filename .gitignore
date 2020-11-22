@@ -1,0 +1,12 @@
+/bag.bin
+
+/vstudio/.vs
+
+/vstudio/Debug
+/vstudio/Release
+/vstudio/x64
+
+/vstudio/bag/Debug
+/vstudio/bag/Release
+/vstudio/bag/x64
+/vstudio/bag/bag.vcxproj.user

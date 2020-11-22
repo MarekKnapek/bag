@@ -1,0 +1,117 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "Build GCC debug.",
+			"command": "g++-10",
+			"args": [
+				"-O0",
+				"-g",
+				"-DDEBUG",
+				"-std=c++20",
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-Werror",
+				"src/bag.cpp",
+				"-o",
+				"bag.bin"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Build GCC release.",
+			"command": "g++-10",
+			"args": [
+				"-O2",
+				"-s",
+				"-DNDEBUG",
+				"-std=c++20",
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-Werror",
+				"src/bag.cpp",
+				"-o",
+				"bag.bin"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Build clang debug.",
+			"command": "clang++-10",
+			"args": [
+				"-O0",
+				"-g",
+				"-DDEBUG",
+				"-std=c++20",
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-Werror",
+				"src/bag.cpp",
+				"-o",
+				"bag.bin"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Build clang release.",
+			"command": "clang++-10",
+			"args": [
+				"-O2",
+				"-s",
+				"-DNDEBUG",
+				"-std=c++20",
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-Werror",
+				"src/bag.cpp",
+				"-o",
+				"bag.bin"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	]
+}
