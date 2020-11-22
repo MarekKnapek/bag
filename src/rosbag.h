@@ -19,5 +19,8 @@ namespace mk
 		bool has_magic(span_t const& span);
 		void consume_magic(span_t& span);
 
+		void read(span_t& span, void* const destination, std::size_t const count);
+		template<typename t> t read(span_t& span) { t val; read(span, &val, sizeof(t)); return val; }
+
 	}
 }

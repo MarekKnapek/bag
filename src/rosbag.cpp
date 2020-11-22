@@ -1,7 +1,7 @@
 #include "rosbag.h"
 
 #include <cassert>
-#include <cstring> // std::memcmp
+#include <cstring> // std::memcmp, std::memcpy
 #include <iterator> // std::size
 
 
@@ -39,4 +39,12 @@ bool mk::rosbag::has_magic(span_t const& span)
 void mk::rosbag::consume_magic(span_t& span)
 {
 	consume(span, detail::s_bag_magic_len);
+}
+
+
+void mk::rosbag::read(span_t& span, void* const destination, std::size_t const count)
+{
+	assert(count <= span.m_len);
+	std::memcpy(destination, span.m_ptr, count);
+	consume(span, count);
 }
