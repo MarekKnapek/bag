@@ -285,6 +285,11 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 			consume(header_span, field_data_len);
 		}
 		CHECK_RET_F(op_found);
+		CHECK_RET_F
+		(
+			(record_idx == 0 && op == static_cast<field_op_type>(detail::op_code::bag)) ||
+			(record_idx != 0 && op != static_cast<field_op_type>(detail::op_code::bag))
+		);
 		mk_printf("Record #%d, type = %s", record_idx, detail::op_to_string(op));
 
 		detail::header_t header = detail::op_to_header(op);
