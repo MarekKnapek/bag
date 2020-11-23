@@ -9,8 +9,8 @@
 #include <cinttypes> // PRIu32, PRIu64
 #include <cstdint> // std::uint8_t, std::uint32_t, std::uint64_t
 #include <cstdio> // std::printf, std::puts
+#include <cstring> // std::memset
 #include <iterator> // std::size
-#include <variant>
 
 
 namespace mk
@@ -179,7 +179,16 @@ namespace mk
 				field_chunk_info_count_type m_count;
 			};
 			static constexpr unsigned const s_header_chunk_info_positions = (1u << 5) - 1;
-			typedef std::variant<std::monostate, header_bag_t, header_chunk_t, header_connection_t, header_message_data_t, header_index_data_t, header_chunk_info_t> header_t;
+
+			union header_t
+			{
+				header_bag_t m_bag;
+				header_chunk_t m_chunk;
+				header_connection_t m_connection;
+				header_message_data_t m_message_data;
+				header_index_data_t m_index_data;
+				header_chunk_info_t m_chunk_info;
+			};
 
 			bool print_info(nchar const* const file_path);
 			bool print_info(span_t& file_span);
@@ -310,7 +319,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_bag_index_pos_type));
 						detail::field_bag_index_pos_type const val = read<detail::field_bag_index_pos_type>(header_span);
 						header_filled |= detail::s_field_bag_index_pos_position_idx;
-						std::get<detail::header_bag_t>(header).m_index_pos = val;
+						header.m_bag.m_index_pos = val;
 						mk_printf(", %s = %" field_bag_index_pos_type_specifier "", detail::s_field_bag_index_pos_name, val);
 					}
 					else if(detail::is_field_bag_conn_count_name(field_begin, field_name_end))
@@ -318,7 +327,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_bag_conn_count_type));
 						detail::field_bag_conn_count_type const val = read<detail::field_bag_conn_count_type>(header_span);
 						header_filled |= detail::s_field_bag_conn_count_position_idx;
-						std::get<detail::header_bag_t>(header).m_conn_count = val;
+						header.m_bag.m_conn_count = val;
 						mk_printf(", %s = %" field_bag_conn_count_type_specifier "", detail::s_field_bag_conn_count_name, val);
 					}
 					else if(detail::is_field_bag_chunk_count_name(field_begin, field_name_end))
@@ -326,7 +335,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_bag_chunk_count_type));
 						detail::field_bag_chunk_count_type const val = read<detail::field_bag_chunk_count_type>(header_span);
 						header_filled |= detail::s_field_bag_chunk_count_position_idx;
-						std::get<detail::header_bag_t>(header).m_chunk_count = val;
+						header.m_bag.m_chunk_count = val;
 						mk_printf(", %s = %" field_bag_chunk_count_type_specifier "", detail::s_field_bag_chunk_count_name, val);
 					}
 				}
@@ -338,7 +347,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						detail::field_chunk_compression_type const val = {field_name_end + 1, static_cast<int>(field_data_len)};
 						CHECK_RET_F(std::all_of(val.m_begin, val.m_begin + val.m_len, detail::is_ascii));
 						header_filled |= detail::s_field_chunk_compression_position_idx;
-						std::get<detail::header_chunk_t>(header).m_compression = val;
+						header.m_chunk.m_compression = val;
 						mk_printf(", %s = %" field_chunk_compression_type_specifier "", detail::s_field_chunk_compression_name, val.m_len, val.m_begin);
 						consume(header_span, field_data_len);
 					}
@@ -347,7 +356,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_size_type));
 						detail::field_chunk_size_type const val = read<detail::field_chunk_size_type>(header_span);
 						header_filled |= detail::s_field_chunk_size_position_idx;
-						std::get<detail::header_chunk_t>(header).m_size = val;
+						header.m_chunk.m_size = val;
 						mk_printf(", %s = %" field_chunk_size_type_specifier "", detail::s_field_chunk_size_name, val);
 					}
 				}
@@ -359,7 +368,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_connection_conn_type));
 						detail::field_connection_conn_type const val = read<detail::field_connection_conn_type>(header_span);
 						header_filled |= detail::s_field_connection_conn_position_idx;
-						std::get<detail::header_connection_t>(header).m_conn = val;
+						header.m_connection.m_conn = val;
 						mk_printf(", %s = %" field_connection_conn_type_specifier "", detail::s_field_connection_conn_name, val);
 					}
 					else if(detail::is_field_connection_topic_name(field_begin, field_name_end))
@@ -367,7 +376,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						detail::field_connection_topic_type const val = {field_name_end + 1, static_cast<int>(field_data_len)};
 						CHECK_RET_F(std::all_of(val.m_begin, val.m_begin + val.m_len, detail::is_ascii));
 						header_filled |= detail::s_field_connection_topic_position_idx;
-						std::get<detail::header_connection_t>(header).m_topic = val;
+						header.m_connection.m_topic = val;
 						mk_printf(", %s = %" field_connection_topic_type_specifier "", detail::s_field_connection_topic_name, val.m_len, val.m_begin);
 						consume(header_span, field_data_len);
 					}
@@ -380,7 +389,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_message_data_conn_type));
 						detail::field_message_data_conn_type const val = read<detail::field_message_data_conn_type>(header_span);
 						header_filled |= detail::s_field_message_data_conn_position_idx;
-						std::get<detail::header_message_data_t>(header).m_conn = val;
+						header.m_message_data.m_conn = val;
 						mk_printf(", %s = %" field_message_data_conn_type_specifier "", detail::s_field_message_data_conn_name, val);
 					}
 					else if(detail::is_field_message_data_time_name(field_begin, field_name_end))
@@ -388,7 +397,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_message_data_time_type));
 						detail::field_message_data_time_type const val = read<detail::field_message_data_time_type>(header_span);
 						header_filled |= detail::s_field_message_data_time_position_idx;
-						std::get<detail::header_message_data_t>(header).m_time = val;
+						header.m_message_data.m_time = val;
 						mk_printf(", %s = %" field_message_data_time_type_specifier "", detail::s_field_message_data_time_name, val);
 					}
 				}
@@ -400,7 +409,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_index_data_ver_type));
 						detail::field_index_data_ver_type const val = read<detail::field_index_data_ver_type>(header_span);
 						header_filled |= detail::s_field_index_data_ver_position_idx;
-						std::get<detail::header_index_data_t>(header).m_ver = val;
+						header.m_index_data.m_ver = val;
 						mk_printf(", %s = %" field_index_data_ver_type_specifier "", detail::s_field_index_data_ver_name, val);
 					}
 					else if(detail::is_field_index_data_conn_name(field_begin, field_name_end))
@@ -408,7 +417,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_index_data_conn_type));
 						detail::field_index_data_conn_type const val = read<detail::field_index_data_conn_type>(header_span);
 						header_filled |= detail::s_field_index_data_conn_position_idx;
-						std::get<detail::header_index_data_t>(header).m_conn = val;
+						header.m_index_data.m_conn = val;
 						mk_printf(", %s = %" field_index_data_conn_type_specifier "", detail::s_field_index_data_conn_name, val);
 					}
 					else if(detail::is_field_index_data_count_name(field_begin, field_name_end))
@@ -416,7 +425,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_index_data_count_type));
 						detail::field_index_data_count_type const val = read<detail::field_index_data_count_type>(header_span);
 						header_filled |= detail::s_field_index_data_count_position_idx;
-						std::get<detail::header_index_data_t>(header).m_count = val;
+						header.m_index_data.m_count = val;
 						mk_printf(", %s = %" field_index_data_count_type_specifier "", detail::s_field_index_data_count_name, val);
 					}
 				}
@@ -428,7 +437,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_info_ver_type));
 						detail::field_chunk_info_ver_type const val = read<detail::field_chunk_info_ver_type>(header_span);
 						header_filled |= detail::s_field_chunk_info_ver_position_idx;
-						std::get<detail::header_chunk_info_t>(header).m_ver = val;
+						header.m_chunk_info.m_ver = val;
 						mk_printf(", %s = %" field_chunk_info_ver_type_specifier "", detail::s_field_chunk_info_ver_name, val);
 					}
 					else if(detail::is_field_chunk_info_chunk_pos_name(field_begin, field_name_end))
@@ -436,7 +445,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_info_chunk_pos_type));
 						detail::field_chunk_info_chunk_pos_type const val = read<detail::field_chunk_info_chunk_pos_type>(header_span);
 						header_filled |= detail::s_field_chunk_info_chunk_pos_position_idx;
-						std::get<detail::header_chunk_info_t>(header).m_chunk_pos = val;
+						header.m_chunk_info.m_chunk_pos = val;
 						mk_printf(", %s = %" field_chunk_info_chunk_pos_type_specifier "", detail::s_field_chunk_info_chunk_pos_name, val);
 					}
 					else if(detail::is_field_chunk_info_start_time_name(field_begin, field_name_end))
@@ -444,7 +453,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_info_start_time_type));
 						detail::field_chunk_info_start_time_type const val = read<detail::field_chunk_info_start_time_type>(header_span);
 						header_filled |= detail::s_field_chunk_info_start_time_position_idx;
-						std::get<detail::header_chunk_info_t>(header).m_start_time = val;
+						header.m_chunk_info.m_start_time = val;
 						mk_printf(", %s = %" field_chunk_info_start_time_type_specifier "", detail::s_field_chunk_info_start_time_name, val);
 					}
 					else if(detail::is_field_chunk_info_end_time_name(field_begin, field_name_end))
@@ -452,7 +461,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_info_end_time_type));
 						detail::field_chunk_info_end_time_type const val = read<detail::field_chunk_info_end_time_type>(header_span);
 						header_filled |= detail::s_field_chunk_info_end_time_position_idx;
-						std::get<detail::header_chunk_info_t>(header).m_end_time = val;
+						header.m_chunk_info.m_end_time = val;
 						mk_printf(", %s = %" field_chunk_info_end_time_type_specifier "", detail::s_field_chunk_info_end_time_name, val);
 					}
 					else if(detail::is_field_chunk_info_count_name(field_begin, field_name_end))
@@ -460,7 +469,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 						CHECK_RET_F(field_data_len == sizeof(detail::field_chunk_info_count_type));
 						detail::field_chunk_info_count_type const val = read<detail::field_chunk_info_count_type>(header_span);
 						header_filled |= detail::s_field_chunk_info_count_position_idx;
-						std::get<detail::header_chunk_info_t>(header).m_count = val;
+						header.m_chunk_info.m_count = val;
 						mk_printf(", %s = %" field_chunk_info_count_type_specifier "", detail::s_field_chunk_info_count_name, val);
 					}
 				}
@@ -607,37 +616,37 @@ mk::rosbag::detail::header_t mk::rosbag::detail::op_to_header(field_op_type cons
 	{
 		case static_cast<std::uint8_t>(op_code::bag):
 		{
-			header = header_bag_t{};
+			header.m_bag = header_bag_t{};
 		}
 		break;
 		case static_cast<std::uint8_t>(op_code::chunk):
 		{
-			header = header_chunk_t{};
+			header.m_chunk = header_chunk_t{};
 		}
 		break;
 		case static_cast<std::uint8_t>(op_code::connection):
 		{
-			header = header_connection_t{};
+			header.m_connection = header_connection_t{};
 		}
 		break;
 		case static_cast<std::uint8_t>(op_code::message_data):
 		{
-			header = header_message_data_t{};
+			header.m_message_data = header_message_data_t{};
 		}
 		break;
 		case static_cast<std::uint8_t>(op_code::index_data):
 		{
-			header = header_index_data_t{};
+			header.m_index_data = header_index_data_t{};
 		}
 		break;
 		case static_cast<std::uint8_t>(op_code::chunk_info):
 		{
-			header = header_chunk_info_t{};
+			header.m_chunk_info = header_chunk_info_t{};
 		}
 		break;
 		default:
 		{
-			header = std::monostate{};
+			std::memset(&header, 0, sizeof(header));
 		}
 		break;
 	}
