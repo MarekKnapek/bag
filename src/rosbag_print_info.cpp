@@ -197,7 +197,6 @@ namespace mk
 			bool is_field_name(char const* const field_name_begin, char const* const field_name_end, char const* const target_name_begin, char const* const target_name_end);
 			bool is_field_op_name(char const* const field_name_begin, char const* const field_name_end);
 
-			bool is_valid_op(field_op_type const op);
 			char const* op_to_string(field_op_type const op);
 			header_t op_to_header(field_op_type const op);
 
@@ -557,18 +556,6 @@ bool mk::rosbag::detail::is_field_name(char const* const field_name_begin, char 
 bool mk::rosbag::detail::is_field_op_name(char const* const field_name_begin, char const* const field_name_end)
 {
 	bool const is = is_field_name(field_name_begin, field_name_end, s_field_op_name, s_field_op_name + s_field_op_name_len);
-	return is;
-}
-
-bool mk::rosbag::detail::is_valid_op(field_op_type const op)
-{
-	bool const is =
-		op == static_cast<field_op_type>(op_code::bag) ||
-		op == static_cast<field_op_type>(op_code::chunk) ||
-		op == static_cast<field_op_type>(op_code::connection) ||
-		op == static_cast<field_op_type>(op_code::message_data) ||
-		op == static_cast<field_op_type>(op_code::index_data) ||
-		op == static_cast<field_op_type>(op_code::chunk_info);
 	return is;
 }
 
