@@ -21,5 +21,5 @@ extern "C" int LLVMFuzzerTestOneInput(std::uint8_t const* const data, std::size_
 
 
 // clang++-10 -g -O1 -std=c++20 -DNDEBUG -fsanitize=fuzzer,address src/fuzz.cpp -o bag_fuzz.bin
-// ./bag_fuzz.bin ./fuzz_corpus
-// ./bag_fuzz.bin ./fuzz_corpus -jobs=4 -workers=4
+// ./bag_fuzz.bin -dict=./fuzz_dict.txt ./fuzz_corpus
+// ./bag_fuzz.bin -dict=./fuzz_dict.txt ./fuzz_corpus -jobs=4 -workers=4

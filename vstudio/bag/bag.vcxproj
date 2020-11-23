@@ -63,6 +63,9 @@
     <ClInclude Include="..\..\src\rosbag.h" />
     <ClInclude Include="..\..\src\scope_exit.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\src\fuzz_dict.txt" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>

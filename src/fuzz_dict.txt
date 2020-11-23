@@ -1,0 +1,25 @@
+"#ROSBAG V2.0\x0A"
+
+"op="
+
+"conn_count="
+"chunk_count="
+
+"compression="
+"size="
+
+"conn="
+"topic="
+
+"conn="
+"time="
+
+"ver="
+"conn="
+"count="
+
+"ver="
+"chunk_pos="
+"start_time="
+"end_time="
+"count="

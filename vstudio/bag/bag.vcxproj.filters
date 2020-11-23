@@ -68,4 +68,9 @@
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\src\fuzz_dict.txt">
+      <Filter>src</Filter>
+    </Text>
+  </ItemGroup>
 </Project>
