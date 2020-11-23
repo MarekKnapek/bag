@@ -8,8 +8,10 @@
 
 #ifdef _MSC_VER
 	#include "read_only_memory_mapped_file_windows.h"
+	typedef mk::read_only_memory_mapped_file_windows_t read_only_memory_mapped_file_native_t;
 #else
 	#include "read_only_memory_mapped_file_linux.h"
+	typedef mk::read_only_memory_mapped_file_linux_t read_only_memory_mapped_file_native_t;
 #endif
 
 

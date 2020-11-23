@@ -31,7 +31,5 @@ namespace mk
 
 	inline void swap(read_only_memory_mapped_file_linux_t& a, read_only_memory_mapped_file_linux_t& b) noexcept { a.swap(b); }
 
-	typedef read_only_memory_mapped_file_linux_t read_only_memory_mapped_file_native_t;
-
 
 }
