@@ -190,10 +190,53 @@ namespace mk
 				header_chunk_info_t m_chunk_info;
 			};
 
+			static constexpr char const s_field_connection_data_topic_name[] = "topic";
+			static constexpr int const s_field_connection_data_topic_name_len = static_cast<int>(std::size(s_field_connection_data_topic_name)) - 1;
+			typedef string_t field_connection_data_topic_type;
+			#define field_connection_data_topic_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_topic_position_idx = 1u << 0;
+			static constexpr char const s_field_connection_data_type_name[] = "type";
+			static constexpr int const s_field_connection_data_type_name_len = static_cast<int>(std::size(s_field_connection_data_type_name)) - 1;
+			typedef string_t field_connection_data_type_type;
+			#define field_connection_data_type_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_type_position_idx = 1u << 1;
+			static constexpr char const s_field_connection_data_md5sum_name[] = "md5sum";
+			static constexpr int const s_field_connection_data_md5sum_name_len = static_cast<int>(std::size(s_field_connection_data_md5sum_name)) - 1;
+			typedef string_t field_connection_data_md5sum_type;
+			#define field_connection_data_md5sum_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_md5sum_position_idx = 1u << 2;
+			static constexpr char const s_field_connection_data_message_definition_name[] = "message_definition";
+			static constexpr int const s_field_connection_data_message_definition_name_len = static_cast<int>(std::size(s_field_connection_data_message_definition_name)) - 1;
+			typedef string_t field_connection_data_message_definition_type;
+			#define field_connection_data_message_definition_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_message_definition_position_idx = 1u << 3;
+			static constexpr char const s_field_connection_data_callerid_name[] = "callerid";
+			static constexpr int const s_field_connection_data_callerid_name_len = static_cast<int>(std::size(s_field_connection_data_callerid_name)) - 1;
+			typedef string_t field_connection_data_callerid_type;
+			#define field_connection_data_callerid_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_callerid_position_idx = 1u << 4;
+			static constexpr char const s_field_connection_data_latching_name[] = "latching";
+			static constexpr int const s_field_connection_data_latching_name_len = static_cast<int>(std::size(s_field_connection_data_latching_name)) - 1;
+			typedef string_t field_connection_data_latching_type;
+			#define field_connection_data_latching_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_latching_position_idx = 1u << 5;
+
+			struct header_connection_data_t
+			{
+				field_connection_data_topic_type m_topic;
+				field_connection_data_type_type m_type;
+				field_connection_data_md5sum_type m_md5sum;
+				field_connection_data_message_definition_type m_message_definition;
+				field_connection_data_callerid_type m_callerid;
+				field_connection_data_latching_type m_latching;
+			};
+			static constexpr unsigned const s_header_connection_data_positions = s_field_connection_data_topic_position_idx | s_field_connection_data_type_position_idx | s_field_connection_data_md5sum_position_idx | s_field_connection_data_message_definition_position_idx;
+
 			bool print_info(nchar const* const file_path);
 			bool print_info(span_t const& file_span);
 
 			bool is_ascii(char const ch);
+			bool is_ascii_with_newlines_and_tabs(char const ch);
 			bool is_field_name(char const* const field_name_begin, char const* const field_name_end, char const* const target_name_begin, char const* const target_name_end);
 			bool is_field_op_name(char const* const field_name_begin, char const* const field_name_end);
 
@@ -532,6 +575,112 @@ bool mk::rosbag::detail::print_info(span_t const& orig_file_span)
 		CHECK_RET_F(record_data_len <= file_span.m_len);
 		mk_printf(", record data len = %" PRIu32 "", record_data_len);
 
+		detail::header_connection_data_t data_header;
+		unsigned data_header_filled = 0;
+		switch(op)
+		{
+			case static_cast<std::uint8_t>(detail::op_code::bag):
+			{
+			}
+			break;
+			case static_cast<std::uint8_t>(detail::op_code::chunk):
+			{
+			}
+			break;
+			case static_cast<std::uint8_t>(detail::op_code::connection):
+			{
+				mk_printf("%s", "\n  Connection data");
+				span_t record_data{file_span.m_ptr, record_data_len};
+				while(record_data.m_len != 0)
+				{
+					CHECK_RET_F(record_data.m_len >= sizeof(std::uint32_t));
+					std::uint32_t const field_len = read<std::uint32_t>(record_data);
+					CHECK_RET_F(field_len <= record_data.m_len);
+					char const* const field_name_begin = static_cast<char const*>(record_data.m_ptr);
+					char const* const field_data_end = field_name_begin + field_len;
+					char const* const field_name_end = std::find(field_name_begin, field_data_end, '=');
+					CHECK_RET_F(field_name_end != field_data_end);
+					CHECK_RET_F(std::all_of(field_name_begin, field_name_end, detail::is_ascii));
+					std::uint32_t const field_name_len = static_cast<std::uint32_t>(field_name_end - field_name_begin);
+					char const* const field_data_begin = static_cast<char const*>(record_data.m_ptr) + field_name_len + 1;
+					std::uint32_t const field_data_len = static_cast<std::uint32_t>(field_data_end - field_data_begin);
+					CHECK_RET_F(std::all_of(field_data_begin, field_data_end, detail::is_ascii_with_newlines_and_tabs));
+					if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_topic_name, s_field_connection_data_topic_name + s_field_connection_data_topic_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_topic_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_topic_position_idx;
+						field_connection_data_topic_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_topic = val;
+						mk_printf(", %s = %" field_connection_data_topic_type_specifier "", s_field_connection_data_topic_name, val.m_len, val.m_begin);
+					}
+					else if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_type_name, s_field_connection_data_type_name + s_field_connection_data_type_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_type_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_type_position_idx;
+						field_connection_data_type_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_type = val;
+						mk_printf(", %s = %" field_connection_data_type_type_specifier "", s_field_connection_data_type_name, val.m_len, val.m_begin);
+					}
+					else if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_md5sum_name, s_field_connection_data_md5sum_name + s_field_connection_data_md5sum_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_md5sum_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_md5sum_position_idx;
+						field_connection_data_md5sum_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_md5sum = val;
+						mk_printf(", %s = %" field_connection_data_md5sum_type_specifier "", s_field_connection_data_md5sum_name, val.m_len, val.m_begin);
+					}
+					else if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_message_definition_name, s_field_connection_data_message_definition_name + s_field_connection_data_message_definition_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_message_definition_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_message_definition_position_idx;
+						field_connection_data_message_definition_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_message_definition = val;
+						mk_printf(", %s = %" field_connection_data_message_definition_type_specifier "", s_field_connection_data_message_definition_name, val.m_len, val.m_begin);
+					}
+					else if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_callerid_name, s_field_connection_data_callerid_name + s_field_connection_data_callerid_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_callerid_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_callerid_position_idx;
+						field_connection_data_callerid_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_callerid = val;
+						mk_printf(", %s = %" field_connection_data_callerid_type_specifier "", s_field_connection_data_callerid_name, val.m_len, val.m_begin);
+					}
+					else if(detail::is_field_name(field_name_begin, field_name_end, s_field_connection_data_latching_name, s_field_connection_data_latching_name + s_field_connection_data_latching_name_len))
+					{
+						CHECK_RET_F((data_header_filled & detail::s_field_connection_data_latching_position_idx) == 0);
+						data_header_filled |= detail::s_field_connection_data_latching_position_idx;
+						field_connection_data_latching_type const val{field_data_begin, static_cast<int>(field_data_len)};
+						data_header.m_latching = val;
+						mk_printf(", %s = %" field_connection_data_latching_type_specifier "", s_field_connection_data_latching_name, val.m_len, val.m_begin);
+					}
+					else
+					{
+						detail::string_t const val{field_data_begin, static_cast<int>(field_data_len)};
+						mk_printf(", %.*s = %.*s", static_cast<int>(field_name_len), field_name_begin, val.m_len, val.m_begin);
+					}
+					consume(record_data, field_len);
+				}
+				CHECK_RET_F((data_header_filled & detail::s_header_connection_data_positions) == detail::s_header_connection_data_positions);
+			}
+			break;
+			case static_cast<std::uint8_t>(detail::op_code::message_data):
+			{
+			}
+			break;
+			case static_cast<std::uint8_t>(detail::op_code::index_data):
+			{
+			}
+			break;
+			case static_cast<std::uint8_t>(detail::op_code::chunk_info):
+			{
+			}
+			break;
+			default:
+			{
+			}
+			break;
+		}
+
 		consume(file_span, record_data_len);
 		mk_printf("%s", "\n");
 		++record_idx;
@@ -544,6 +693,13 @@ bool mk::rosbag::detail::is_ascii(char const ch)
 {
 	unsigned char const uch = static_cast<unsigned char>(ch);
 	bool const is_valid = uch >= 0x20 && uch <= 0x7e;
+	return is_valid;
+}
+
+bool mk::rosbag::detail::is_ascii_with_newlines_and_tabs(char const ch)
+{
+	unsigned char const uch = static_cast<unsigned char>(ch);
+	bool const is_valid = (uch >= 0x20 && uch <= 0x7e) || (uch == 0x09 || uch == 0x0a || uch == 0x0d);
 	return is_valid;
 }
 
