@@ -191,7 +191,7 @@ namespace mk
 			};
 
 			bool print_info(nchar const* const file_path);
-			bool print_info(span_t& file_span);
+			bool print_info(span_t const& file_span);
 
 			bool is_ascii(char const ch);
 			bool is_field_name(char const* const field_name_begin, char const* const field_name_end, char const* const target_name_begin, char const* const target_name_end);
@@ -247,8 +247,9 @@ bool mk::rosbag::detail::print_info(nchar const* const file_path)
 	return true;
 }
 
-bool mk::rosbag::detail::print_info(span_t& file_span)
+bool mk::rosbag::detail::print_info(span_t const& orig_file_span)
 {
+	span_t file_span = orig_file_span;
 	CHECK_RET_F(has_magic(file_span));
 	consume_magic(file_span);
 
@@ -492,6 +493,7 @@ bool mk::rosbag::detail::print_info(span_t& file_span)
 			case static_cast<std::uint8_t>(detail::op_code::bag):
 			{
 				CHECK_RET_F(header_filled == detail::s_header_bag_positions);
+				CHECK_RET_F(header.m_bag.m_index_pos <= orig_file_span.m_len);
 			}
 			break;
 			case static_cast<std::uint8_t>(detail::op_code::chunk):
