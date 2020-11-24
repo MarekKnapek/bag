@@ -375,9 +375,10 @@ bool mk::rosbag_pcap::detail::find_ouster_lidar_connection(mk::rosbag::span_t co
 	CHECK_RET_F(op_found);
 	CHECK_RET_F(header_filled == detail::s_header_bag_positions);
 	CHECK_RET_F(header.m_bag.m_index_pos <= orig_file_span.m_len);
+	CHECK_RET_F(header.m_bag.m_index_pos <= 0xFFFFFFFF); // size_t
 
 	file_span = orig_file_span;
-	consume(file_span, header.m_bag.m_index_pos);
+	consume(file_span, static_cast<std::size_t>(header.m_bag.m_index_pos));
 
 	field_bag_conn_count_type const conn_count = header.m_bag.m_conn_count;
 	header.m_connection = detail::header_connection_t{};

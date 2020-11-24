@@ -41,6 +41,12 @@
     <ClCompile Include="..\..\src\rosbag_pcap.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\rosbag_header.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\rosbag_detail.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\check_ret.h">
@@ -71,6 +77,12 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\rosbag_pcap.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\rosbag_header.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\rosbag_detail.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>

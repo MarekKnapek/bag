@@ -1,21 +1,10 @@
 #include "rosbag.h"
 
+#include "rosbag_detail.h"
+
 #include <cassert>
 #include <cstring> // std::memcmp, std::memcpy
 #include <iterator> // std::size
-
-
-namespace mk
-{
-	namespace rosbag
-	{
-		namespace detail
-		{
-			static constexpr char const s_bag_magic[] = "#ROSBAG V2.0\x0A";
-			static constexpr int const s_bag_magic_len = static_cast<int>(std::size(s_bag_magic)) - 1;
-		}
-	}
-}
 
 
 void mk::rosbag::consume(span_t& span, std::size_t const count)

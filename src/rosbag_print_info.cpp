@@ -311,7 +311,7 @@ bool mk::rosbag::detail::print_info(span_t const& orig_file_span)
 			CHECK_RET_F(field_len <= header_span.m_len);
 			char const* const field_begin = static_cast<char const*>(header_span.m_ptr);
 			char const* const field_end = field_begin + field_len;
-			auto const field_name_end = std::find(field_begin, field_end, '=');
+			char const* const field_name_end = std::find(field_begin, field_end, '=');
 			CHECK_RET_F(field_name_end != field_end);
 			CHECK_RET_F(field_name_end != field_begin);
 			CHECK_RET_F(std::all_of(field_begin, field_name_end, detail::is_ascii));
@@ -705,13 +705,6 @@ bool mk::rosbag::detail::print_info(span_t const& orig_file_span)
 	}
 
 	return true;
-}
-
-bool mk::rosbag::detail::is_ascii(char const ch)
-{
-	unsigned char const uch = static_cast<unsigned char>(ch);
-	bool const is_valid = uch >= 0x20 && uch <= 0x7e;
-	return is_valid;
 }
 
 bool mk::rosbag::detail::is_ascii_with_newlines_and_tabs(char const ch)
