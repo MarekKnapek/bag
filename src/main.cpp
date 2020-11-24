@@ -1,5 +1,6 @@
 #include "check_ret.h"
 #include "native.h"
+#include "rosbag_pcap.h"
 #include "rosbag_print_info.h"
 #include "scope_exit.h"
 
@@ -55,5 +56,5 @@ bool bag_(int const argc, nchar const* const* const argv)
 
 bool bag(int const argc, nchar const* const* const argv)
 {
-	return mk::rosbag::print_info(argc, argv);
+	return mk::rosbag_pcap::pcap(argc, argv);
 }

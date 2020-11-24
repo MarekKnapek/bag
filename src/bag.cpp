@@ -3,4 +3,5 @@
 #include "read_only_memory_mapped_file.cpp"
 #include "read_only_memory_mapped_file_linux.cpp"
 #include "rosbag.cpp"
+#include "rosbag_pcap.cpp"
 #include "rosbag_print_info.cpp"

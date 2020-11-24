@@ -1,0 +1,664 @@
+#include "rosbag_pcap.h"
+
+#include "check_ret.h"
+#include "printf.h"
+#include "read_only_memory_mapped_file.h"
+#include "rosbag.h"
+
+#include <algorithm> // std::find
+#include <cassert>
+#include <cinttypes> // PRIu32, PRIu64
+#include <cstdint> // std::uint8_t, std::uint32_t, std::uint64_t
+#include <cstdio> // std::printf, std::puts
+#include <cstring> // std::memset
+#include <iterator> // std::size
+
+
+namespace mk
+{
+	namespace rosbag_pcap
+	{
+		namespace detail
+		{
+			static constexpr char const s_field_op_name[] = "op";
+			static constexpr int const s_field_op_name_len = static_cast<int>(std::size(s_field_op_name)) - 1;
+			typedef std::uint8_t field_op_type;
+
+			struct string_t
+			{
+				char const* m_begin;
+				int m_len;
+			};
+
+			static constexpr char const s_header_type_bag_name[] = "bag";
+			static constexpr char const s_header_type_chunk_name[] = "chunk";
+			static constexpr char const s_header_type_connection_name[] = "connection";
+			static constexpr char const s_header_type_message_data_name[] = "message_data";
+			static constexpr char const s_header_type_index_data_name[] = "index_data";
+			static constexpr char const s_header_type_chunk_info_name[] = "chunk_info";
+			static constexpr char const s_header_type_unknown_name[] = "unknown";
+
+			static constexpr char const s_field_bag_index_pos_name[] = "index_pos";
+			static constexpr int const s_field_bag_index_pos_name_len = static_cast<int>(std::size(s_field_bag_index_pos_name)) - 1;
+			typedef std::uint64_t field_bag_index_pos_type;
+			#define field_bag_index_pos_type_specifier PRIu64
+			static constexpr unsigned const s_field_bag_index_pos_position_idx = 1u << 0;
+			static constexpr char const s_field_bag_conn_count_name[] = "conn_count";
+			static constexpr int const s_field_bag_conn_count_name_len = static_cast<int>(std::size(s_field_bag_conn_count_name)) - 1;
+			typedef std::uint32_t field_bag_conn_count_type;
+			#define field_bag_conn_count_type_specifier PRIu32
+			static constexpr unsigned const s_field_bag_conn_count_position_idx = 1u << 1;
+			static constexpr char const s_field_bag_chunk_count_name[] = "chunk_count";
+			static constexpr int const s_field_bag_chunk_count_name_len = static_cast<int>(std::size(s_field_bag_chunk_count_name)) - 1;
+			typedef std::uint32_t field_bag_chunk_count_type;
+			#define field_bag_chunk_count_type_specifier PRIu32
+			static constexpr unsigned const s_field_bag_chunk_count_position_idx = 1u << 2;
+
+			static constexpr char const s_field_chunk_compression_name[] = "compression";
+			static constexpr int const s_field_chunk_compression_name_len = static_cast<int>(std::size(s_field_chunk_compression_name)) - 1;
+			typedef string_t field_chunk_compression_type;
+			#define field_chunk_compression_type_specifier ".*s"
+			static constexpr unsigned const s_field_chunk_compression_position_idx = 1u << 0;
+			static constexpr char const s_field_chunk_size_name[] = "size";
+			static constexpr int const s_field_chunk_size_name_len = static_cast<int>(std::size(s_field_chunk_size_name)) - 1;
+			typedef std::uint32_t field_chunk_size_type;
+			#define field_chunk_size_type_specifier PRIu32
+			static constexpr unsigned const s_field_chunk_size_position_idx = 1u << 1;
+
+			static constexpr char const s_field_connection_conn_name[] = "conn";
+			static constexpr int const s_field_connection_conn_name_len = static_cast<int>(std::size(s_field_connection_conn_name)) - 1;
+			typedef std::uint32_t field_connection_conn_type;
+			#define field_connection_conn_type_specifier PRIu32
+			static constexpr unsigned const s_field_connection_conn_position_idx = 1u << 0;
+			static constexpr char const s_field_connection_topic_name[] = "topic";
+			static constexpr int const s_field_connection_topic_name_len = static_cast<int>(std::size(s_field_connection_topic_name)) - 1;
+			typedef string_t field_connection_topic_type;
+			#define field_connection_topic_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_topic_position_idx = 1u << 1;
+
+			static constexpr char const s_field_message_data_conn_name[] = "conn";
+			static constexpr int const s_field_message_data_conn_name_len = static_cast<int>(std::size(s_field_message_data_conn_name)) - 1;
+			typedef std::uint32_t field_message_data_conn_type;
+			#define field_message_data_conn_type_specifier PRIu32
+			static constexpr unsigned const s_field_message_data_conn_position_idx = 1u << 0;
+			static constexpr char const s_field_message_data_time_name[] = "time";
+			static constexpr int const s_field_message_data_time_name_len = static_cast<int>(std::size(s_field_message_data_time_name)) - 1;
+			typedef std::uint64_t field_message_data_time_type;
+			#define field_message_data_time_type_specifier PRIu64
+			static constexpr unsigned const s_field_message_data_time_position_idx = 1u << 1;
+
+			static constexpr char const s_field_index_data_ver_name[] = "ver";
+			static constexpr int const s_field_index_data_ver_name_len = static_cast<int>(std::size(s_field_index_data_ver_name)) - 1;
+			typedef std::uint32_t field_index_data_ver_type;
+			#define field_index_data_ver_type_specifier PRIu32
+			static constexpr unsigned const s_field_index_data_ver_position_idx = 1u << 0;
+			static constexpr char const s_field_index_data_conn_name[] = "conn";
+			static constexpr int const s_field_index_data_conn_name_len = static_cast<int>(std::size(s_field_index_data_conn_name)) - 1;
+			typedef std::uint32_t field_index_data_conn_type;
+			#define field_index_data_conn_type_specifier PRIu32
+			static constexpr unsigned const s_field_index_data_conn_position_idx = 1u << 1;
+			static constexpr char const s_field_index_data_count_name[] = "count";
+			static constexpr int const s_field_index_data_count_name_len = static_cast<int>(std::size(s_field_index_data_count_name)) - 1;
+			typedef std::uint32_t field_index_data_count_type;
+			#define field_index_data_count_type_specifier PRIu32
+			static constexpr unsigned const s_field_index_data_count_position_idx = 1u << 2;
+
+			static constexpr char const s_field_chunk_info_ver_name[] = "ver";
+			static constexpr int const s_field_chunk_info_ver_name_len = static_cast<int>(std::size(s_field_chunk_info_ver_name)) - 1;
+			typedef std::uint32_t field_chunk_info_ver_type;
+			#define field_chunk_info_ver_type_specifier PRIu32
+			static constexpr unsigned const s_field_chunk_info_ver_position_idx = 1u << 0;
+			static constexpr char const s_field_chunk_info_chunk_pos_name[] = "chunk_pos";
+			static constexpr int const s_field_chunk_info_chunk_pos_name_len = static_cast<int>(std::size(s_field_chunk_info_chunk_pos_name)) - 1;
+			typedef std::uint64_t field_chunk_info_chunk_pos_type;
+			#define field_chunk_info_chunk_pos_type_specifier PRIu64
+			static constexpr unsigned const s_field_chunk_info_chunk_pos_position_idx = 1u << 1;
+			static constexpr char const s_field_chunk_info_start_time_name[] = "start_time";
+			static constexpr int const s_field_chunk_info_start_time_name_len = static_cast<int>(std::size(s_field_chunk_info_start_time_name)) - 1;
+			typedef std::uint64_t field_chunk_info_start_time_type;
+			#define field_chunk_info_start_time_type_specifier PRIu64
+			static constexpr unsigned const s_field_chunk_info_start_time_position_idx = 1u << 2;
+			static constexpr char const s_field_chunk_info_end_time_name[] = "end_time";
+			static constexpr int const s_field_chunk_info_end_time_name_len = static_cast<int>(std::size(s_field_chunk_info_end_time_name)) - 1;
+			typedef std::uint64_t field_chunk_info_end_time_type;
+			#define field_chunk_info_end_time_type_specifier PRIu64
+			static constexpr unsigned const s_field_chunk_info_end_time_position_idx = 1u << 3;
+			static constexpr char const s_field_chunk_info_count_name[] = "count";
+			static constexpr int const s_field_chunk_info_count_name_len = static_cast<int>(std::size(s_field_chunk_info_count_name)) - 1;
+			typedef std::uint32_t field_chunk_info_count_type;
+			#define field_chunk_info_count_type_specifier PRIu32
+			static constexpr unsigned const s_field_chunk_info_count_position_idx = 1u << 4;
+
+			enum class op_code : field_op_type
+			{
+				bag = 0x03,
+				chunk = 0x05,
+				connection = 0x07,
+				message_data = 0x02,
+				index_data = 0x04,
+				chunk_info = 0x06,
+			};
+			
+			struct header_bag_t
+			{
+				field_bag_index_pos_type m_index_pos;
+				field_bag_conn_count_type m_conn_count;
+				field_bag_chunk_count_type m_chunk_count;
+			};
+			static constexpr unsigned const s_header_bag_positions = (1u << 3) - 1;
+			struct header_chunk_t
+			{
+				field_chunk_compression_type m_compression;
+				field_chunk_size_type m_size;
+			};
+			static constexpr unsigned const s_header_chunk_positions = (1u << 2) - 1;
+			struct header_connection_t
+			{
+				field_connection_conn_type m_conn;
+				field_connection_topic_type m_topic;
+			};
+			static constexpr unsigned const s_header_connection_positions = (1u << 2) - 1;
+			struct header_message_data_t
+			{
+				field_message_data_conn_type m_conn;
+				field_message_data_time_type m_time;
+			};
+			static constexpr unsigned const s_header_message_data_positions = (1u << 2) - 1;
+			struct header_index_data_t
+			{
+				field_index_data_ver_type m_ver;
+				field_index_data_conn_type m_conn;
+				field_index_data_count_type m_count;
+			};
+			static constexpr unsigned const s_header_index_data_positions = (1u << 3) - 1;
+			struct header_chunk_info_t
+			{
+				field_chunk_info_ver_type m_ver;
+				field_chunk_info_chunk_pos_type m_chunk_pos;
+				field_chunk_info_start_time_type m_start_time;
+				field_chunk_info_end_time_type m_end_time;
+				field_chunk_info_count_type m_count;
+			};
+			static constexpr unsigned const s_header_chunk_info_positions = (1u << 5) - 1;
+
+			union header_t
+			{
+				header_bag_t m_bag;
+				header_chunk_t m_chunk;
+				header_connection_t m_connection;
+				header_message_data_t m_message_data;
+				header_index_data_t m_index_data;
+				header_chunk_info_t m_chunk_info;
+			};
+
+			static constexpr char const s_field_connection_data_topic_name[] = "topic";
+			static constexpr int const s_field_connection_data_topic_name_len = static_cast<int>(std::size(s_field_connection_data_topic_name)) - 1;
+			typedef string_t field_connection_data_topic_type;
+			#define field_connection_data_topic_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_topic_position_idx = 1u << 0;
+			static constexpr char const s_field_connection_data_type_name[] = "type";
+			static constexpr int const s_field_connection_data_type_name_len = static_cast<int>(std::size(s_field_connection_data_type_name)) - 1;
+			typedef string_t field_connection_data_type_type;
+			#define field_connection_data_type_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_type_position_idx = 1u << 1;
+			static constexpr char const s_field_connection_data_md5sum_name[] = "md5sum";
+			static constexpr int const s_field_connection_data_md5sum_name_len = static_cast<int>(std::size(s_field_connection_data_md5sum_name)) - 1;
+			typedef string_t field_connection_data_md5sum_type;
+			#define field_connection_data_md5sum_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_md5sum_position_idx = 1u << 2;
+			static constexpr char const s_field_connection_data_message_definition_name[] = "message_definition";
+			static constexpr int const s_field_connection_data_message_definition_name_len = static_cast<int>(std::size(s_field_connection_data_message_definition_name)) - 1;
+			typedef string_t field_connection_data_message_definition_type;
+			#define field_connection_data_message_definition_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_message_definition_position_idx = 1u << 3;
+			static constexpr char const s_field_connection_data_callerid_name[] = "callerid";
+			static constexpr int const s_field_connection_data_callerid_name_len = static_cast<int>(std::size(s_field_connection_data_callerid_name)) - 1;
+			typedef string_t field_connection_data_callerid_type;
+			#define field_connection_data_callerid_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_callerid_position_idx = 1u << 4;
+			static constexpr char const s_field_connection_data_latching_name[] = "latching";
+			static constexpr int const s_field_connection_data_latching_name_len = static_cast<int>(std::size(s_field_connection_data_latching_name)) - 1;
+			typedef string_t field_connection_data_latching_type;
+			#define field_connection_data_latching_type_specifier ".*s"
+			static constexpr unsigned const s_field_connection_data_latching_position_idx = 1u << 5;
+
+			struct header_connection_data_t
+			{
+				field_connection_data_topic_type m_topic;
+				field_connection_data_type_type m_type;
+				field_connection_data_md5sum_type m_md5sum;
+				field_connection_data_message_definition_type m_message_definition;
+				field_connection_data_callerid_type m_callerid;
+				field_connection_data_latching_type m_latching;
+			};
+			static constexpr unsigned const s_header_connection_data_positions = s_field_connection_data_topic_position_idx | s_field_connection_data_type_position_idx | s_field_connection_data_md5sum_position_idx | s_field_connection_data_message_definition_position_idx;
+
+			static constexpr char const s_ouster_lidar_topic_name[] = "/os_node/lidar_packets";
+			static constexpr int const s_ouster_lidar_topic_name_len = static_cast<int>(std::size(s_ouster_lidar_topic_name)) - 1;
+
+			bool pcap(nchar const* const file_path);
+			bool pcap(mk::rosbag::span_t const& file_span);
+			bool find_ouster_lidar_connection(mk::rosbag::span_t const& file_span, bool* const out_found, std::uint32_t* const out_connection);
+
+			bool is_ascii(char const ch);
+			bool is_ascii_with_newlines_and_tabs(char const ch);
+			bool is_field_name(char const* const field_name_begin, char const* const field_name_end, char const* const target_name_begin, char const* const target_name_end);
+			bool is_field_op_name(char const* const field_name_begin, char const* const field_name_end);
+
+			char const* op_to_string(field_op_type const op);
+			header_t op_to_header(field_op_type const op);
+
+			bool is_field_bag_index_pos_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_bag_conn_count_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_bag_chunk_count_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_compression_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_size_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_connection_conn_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_connection_topic_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_message_data_conn_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_message_data_time_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_index_data_ver_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_index_data_conn_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_index_data_count_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_info_ver_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_info_chunk_pos_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_info_start_time_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_info_end_time_name(char const* const field_name_begin, char const* const field_name_end);
+			bool is_field_chunk_info_count_name(char const* const field_name_begin, char const* const field_name_end);
+		}
+	}
+}
+
+
+bool mk::rosbag_pcap::pcap(int const argc, nchar const* const* const argv)
+{
+	CHECK_RET_F(argc >= 2);
+	for(int i = 1; i != argc; ++i)
+	{
+		bool const bussiness = detail::pcap(argv[i]);
+		CHECK_RET_F(bussiness);
+	}
+	return true;
+}
+
+
+bool mk::rosbag_pcap::detail::pcap(nchar const* const file_path)
+{
+	mk::read_only_memory_mapped_file_t const rommf{file_path};
+	CHECK_RET_F(rommf);
+
+	mk::rosbag::span_t file_span{rommf.get_data(), rommf.get_size()};
+	bool const bussiness = detail::pcap(file_span);
+	CHECK_RET_F(bussiness);
+
+	return true;
+}
+
+bool mk::rosbag_pcap::detail::pcap(mk::rosbag::span_t const& orig_file_span)
+{
+	bool found;
+	std::uint32_t connection;
+	bool const search_ok = find_ouster_lidar_connection(orig_file_span, &found, &connection);
+	CHECK_RET_F(search_ok);
+	CHECK_RET_F(found);
+
+	// TODO: Read chunk and all its following index_data.
+	// See, if there is my connection, if it is then decompress chunk and jump to connection index.
+	// Serialize decompressed data.
+
+	return true;
+}
+
+bool mk::rosbag_pcap::detail::find_ouster_lidar_connection(mk::rosbag::span_t const& orig_file_span, bool* const out_found, std::uint32_t* const out_connection)
+{
+	assert(out_found);
+	assert(out_connection);
+
+	mk::rosbag::span_t file_span = orig_file_span;
+	CHECK_RET_F(has_magic(file_span));
+	consume_magic(file_span);
+
+	detail::header_t header;
+	header.m_bag = detail::header_bag_t{};
+	unsigned header_filled = 0;
+
+	bool op_found = false;
+	CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+	std::uint32_t header_len = read<std::uint32_t>(file_span);
+	mk::rosbag::span_t header_span = mk::rosbag::span_t{file_span.m_ptr, header_len};
+	while(header_span.m_len != 0)
+	{
+		CHECK_RET_F(header_span.m_len >= sizeof(std::uint32_t));
+		std::uint32_t const field_len = read<std::uint32_t>(header_span);
+		CHECK_RET_F(field_len <= header_span.m_len);
+		char const* const field_begin = static_cast<char const*>(header_span.m_ptr);
+		char const* const field_end = field_begin + field_len;
+		auto const field_name_end = std::find(field_begin, field_end, '=');
+		CHECK_RET_F(field_name_end != field_end);
+		CHECK_RET_F(field_name_end != field_begin);
+		CHECK_RET_F(std::all_of(field_begin, field_name_end, detail::is_ascii));
+		std::uint32_t const field_name_len = static_cast<std::uint32_t>(field_name_end - field_begin);
+		consume(header_span, field_name_len + 1);
+		std::uint32_t const field_data_len = field_len - field_name_len - 1;
+		if(detail::is_field_op_name(field_begin, field_name_end))
+		{
+			CHECK_RET_F(field_data_len == sizeof(detail::field_op_type));
+			detail::field_op_type const op = read<detail::field_op_type>(header_span);
+			CHECK_RET_F(op == static_cast<detail::field_op_type>(detail::op_code::bag));
+			op_found = true;
+		}
+		else if(detail::is_field_bag_index_pos_name(field_begin, field_name_end))
+		{
+			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_index_pos_type));
+			detail::field_bag_index_pos_type const val = read<detail::field_bag_index_pos_type>(header_span);
+			CHECK_RET_F((header_filled & detail::s_field_bag_index_pos_position_idx) == 0);
+			header_filled |= detail::s_field_bag_index_pos_position_idx;
+			header.m_bag.m_index_pos = val;
+		}
+		else if(detail::is_field_bag_conn_count_name(field_begin, field_name_end))
+		{
+			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_conn_count_type));
+			detail::field_bag_conn_count_type const val = read<detail::field_bag_conn_count_type>(header_span);
+			CHECK_RET_F((header_filled & detail::s_field_bag_conn_count_position_idx) == 0);
+			header_filled |= detail::s_field_bag_conn_count_position_idx;
+			header.m_bag.m_conn_count = val;
+		}
+		else if(detail::is_field_bag_chunk_count_name(field_begin, field_name_end))
+		{
+			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_chunk_count_type));
+			detail::field_bag_chunk_count_type const val = read<detail::field_bag_chunk_count_type>(header_span);
+			CHECK_RET_F((header_filled & detail::s_field_bag_chunk_count_position_idx) == 0);
+			header_filled |= detail::s_field_bag_chunk_count_position_idx;
+			header.m_bag.m_chunk_count = val;
+		}
+	}
+	CHECK_RET_F(op_found);
+	CHECK_RET_F(header_filled == detail::s_header_bag_positions);
+	CHECK_RET_F(header.m_bag.m_index_pos <= orig_file_span.m_len);
+
+	file_span = orig_file_span;
+	consume(file_span, header.m_bag.m_index_pos);
+
+	field_bag_conn_count_type const conn_count = header.m_bag.m_conn_count;
+	header.m_connection = detail::header_connection_t{};
+	for(field_bag_conn_count_type connection_i = 0; connection_i!= conn_count; ++connection_i)
+	{
+		header_filled = 0;
+		op_found = false;
+		CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+		header_len = read<std::uint32_t>(file_span);
+		header_span = mk::rosbag::span_t{file_span.m_ptr, header_len};
+		while(header_span.m_len != 0)
+		{
+			CHECK_RET_F(header_span.m_len >= sizeof(std::uint32_t));
+			std::uint32_t const field_len = read<std::uint32_t>(header_span);
+			CHECK_RET_F(field_len <= header_span.m_len);
+			char const* const field_begin = static_cast<char const*>(header_span.m_ptr);
+			char const* const field_end = field_begin + field_len;
+			auto const field_name_end = std::find(field_begin, field_end, '=');
+			CHECK_RET_F(field_name_end != field_end);
+			CHECK_RET_F(field_name_end != field_begin);
+			CHECK_RET_F(std::all_of(field_begin, field_name_end, detail::is_ascii));
+			std::uint32_t const field_name_len = static_cast<std::uint32_t>(field_name_end - field_begin);
+			consume(header_span, field_name_len + 1);
+			std::uint32_t const field_data_len = field_len - field_name_len - 1;
+			if(detail::is_field_op_name(field_begin, field_name_end))
+			{
+				CHECK_RET_F(field_data_len == sizeof(detail::field_op_type));
+				detail::field_op_type const op = read<detail::field_op_type>(header_span);
+				CHECK_RET_F(op == static_cast<detail::field_op_type>(detail::op_code::connection));
+				op_found = true;
+			}
+			else if(detail::is_field_connection_conn_name(field_begin, field_name_end))
+			{
+				CHECK_RET_F(field_data_len == sizeof(detail::field_connection_conn_type));
+				detail::field_connection_conn_type const val = read<detail::field_connection_conn_type>(header_span);
+				CHECK_RET_F((header_filled & detail::s_field_connection_conn_position_idx) == 0);
+				header_filled |= detail::s_field_connection_conn_position_idx;
+				header.m_connection.m_conn = val;
+			}
+			else if(detail::is_field_connection_topic_name(field_begin, field_name_end))
+			{
+				detail::field_connection_topic_type const val = {field_name_end + 1, static_cast<int>(field_data_len)};
+				CHECK_RET_F(std::all_of(val.m_begin, val.m_begin + val.m_len, detail::is_ascii));
+				CHECK_RET_F((header_filled & detail::s_field_connection_topic_position_idx) == 0);
+				header_filled |= detail::s_field_connection_topic_position_idx;
+				header.m_connection.m_topic = val;
+				consume(header_span, field_data_len);
+			}
+		}
+		CHECK_RET_F(op_found);
+		CHECK_RET_F(header_filled == detail::s_header_connection_positions);
+		if(header.m_connection.m_topic.m_len == s_ouster_lidar_topic_name_len && std::memcmp(header.m_connection.m_topic.m_begin, s_ouster_lidar_topic_name, s_ouster_lidar_topic_name_len) == 0)
+		{
+			*out_found = true;
+			*out_connection = header.m_connection.m_conn;
+			return true;
+		}
+		consume(file_span, header_len);
+
+		std::uint32_t const record_data_len = read<std::uint32_t>(file_span);
+		CHECK_RET_F(record_data_len <= file_span.m_len);
+		consume(file_span, record_data_len);
+	}
+
+	return false;
+}
+
+
+bool mk::rosbag_pcap::detail::is_ascii(char const ch)
+{
+	unsigned char const uch = static_cast<unsigned char>(ch);
+	bool const is_valid = uch >= 0x20 && uch <= 0x7e;
+	return is_valid;
+}
+
+bool mk::rosbag_pcap::detail::is_ascii_with_newlines_and_tabs(char const ch)
+{
+	unsigned char const uch = static_cast<unsigned char>(ch);
+	bool const is_valid = (uch >= 0x20 && uch <= 0x7e) || (uch == 0x09 || uch == 0x0a || uch == 0x0d);
+	return is_valid;
+}
+
+bool mk::rosbag_pcap::detail::is_field_name(char const* const field_name_begin, char const* const field_name_end, char const* const target_name_begin, char const* const target_name_end)
+{
+	bool const is = field_name_end - field_name_begin == target_name_end - target_name_begin && std::memcmp(field_name_begin, target_name_begin, target_name_end - target_name_begin) == 0;
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_op_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_op_name, s_field_op_name + s_field_op_name_len);
+	return is;
+}
+
+char const* mk::rosbag_pcap::detail::op_to_string(field_op_type const op)
+{
+	char const* str;
+	switch(op)
+	{
+		case static_cast<std::uint8_t>(op_code::bag):
+		{
+			str = s_header_type_bag_name;
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::chunk):
+		{
+			str = s_header_type_chunk_name;
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::connection):
+		{
+			str = s_header_type_connection_name;
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::message_data):
+		{
+			str = s_header_type_message_data_name;
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::index_data):
+		{
+			str = s_header_type_index_data_name;
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::chunk_info):
+		{
+			str = s_header_type_chunk_info_name;
+		}
+		break;
+		default:
+		{
+			str = s_header_type_unknown_name;
+		}
+		break;
+	}
+	return str;
+}
+
+mk::rosbag_pcap::detail::header_t mk::rosbag_pcap::detail::op_to_header(field_op_type const op)
+{
+	header_t header;
+	switch(op)
+	{
+		case static_cast<std::uint8_t>(op_code::bag):
+		{
+			header.m_bag = header_bag_t{};
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::chunk):
+		{
+			header.m_chunk = header_chunk_t{};
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::connection):
+		{
+			header.m_connection = header_connection_t{};
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::message_data):
+		{
+			header.m_message_data = header_message_data_t{};
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::index_data):
+		{
+			header.m_index_data = header_index_data_t{};
+		}
+		break;
+		case static_cast<std::uint8_t>(op_code::chunk_info):
+		{
+			header.m_chunk_info = header_chunk_info_t{};
+		}
+		break;
+		default:
+		{
+			std::memset(&header, 0, sizeof(header));
+		}
+		break;
+	}
+	return header;
+}
+
+
+bool mk::rosbag_pcap::detail::is_field_bag_index_pos_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_bag_index_pos_name, s_field_bag_index_pos_name + s_field_bag_index_pos_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_bag_conn_count_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_bag_conn_count_name, s_field_bag_conn_count_name + s_field_bag_conn_count_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_bag_chunk_count_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_bag_chunk_count_name, s_field_bag_chunk_count_name + s_field_bag_chunk_count_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_compression_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_compression_name, s_field_chunk_compression_name + s_field_chunk_compression_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_size_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_size_name, s_field_chunk_size_name + s_field_chunk_size_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_connection_conn_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_connection_conn_name, s_field_connection_conn_name + s_field_connection_conn_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_connection_topic_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_connection_topic_name, s_field_connection_topic_name + s_field_connection_topic_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_message_data_conn_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_message_data_conn_name, s_field_message_data_conn_name + s_field_message_data_conn_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_message_data_time_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_message_data_time_name, s_field_message_data_time_name + s_field_message_data_time_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_index_data_ver_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_index_data_ver_name, s_field_index_data_ver_name + s_field_index_data_ver_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_index_data_conn_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_index_data_conn_name, s_field_index_data_conn_name + s_field_index_data_conn_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_index_data_count_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_index_data_count_name, s_field_index_data_count_name + s_field_index_data_count_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_info_ver_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_info_ver_name, s_field_chunk_info_ver_name + s_field_chunk_info_ver_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_info_chunk_pos_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_info_chunk_pos_name, s_field_chunk_info_chunk_pos_name + s_field_chunk_info_chunk_pos_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_info_start_time_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_info_start_time_name, s_field_chunk_info_start_time_name + s_field_chunk_info_start_time_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_info_end_time_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_info_end_time_name, s_field_chunk_info_end_time_name + s_field_chunk_info_end_time_name_len);
+	return is;
+}
+
+bool mk::rosbag_pcap::detail::is_field_chunk_info_count_name(char const* const field_name_begin, char const* const field_name_end)
+{
+	bool const is = is_field_name(field_name_begin, field_name_end, s_field_chunk_info_count_name, s_field_chunk_info_count_name + s_field_chunk_info_count_name_len);
+	return is;
+}
