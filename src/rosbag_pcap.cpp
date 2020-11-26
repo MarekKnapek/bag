@@ -1,9 +1,12 @@
 #include "rosbag_pcap.h"
 
+#include "scope_exit.h"
 #include "check_ret.h"
 #include "printf.h"
 #include "read_only_memory_mapped_file.h"
 #include "rosbag.h"
+#include "rosbag_detail.h"
+#include "rosbag_header.h"
 
 #include <algorithm> // std::find
 #include <cassert>
@@ -12,6 +15,10 @@
 #include <cstdio> // std::printf, std::puts
 #include <cstring> // std::memset
 #include <iterator> // std::size
+#include <limits> // std::numeric_limits<std::size_t>::max;
+#include <vector>
+
+#include <lz4frame.h>
 
 
 namespace mk
@@ -306,6 +313,108 @@ bool mk::rosbag_pcap::detail::pcap(mk::rosbag::span_t const& orig_file_span)
 	// See, if there is my connection, if it is then decompress chunk and jump to connection index.
 	// Serialize decompressed data.
 
+	mk::rosbag::span_t file_span = orig_file_span;
+	mk::rosbag::consume_magic(file_span);
+
+	while(file_span.m_len != 0)
+	{
+		bool op_found;
+		mk::rosbag::header_type header_type;
+		bool const header_type_read = mk::rosbag::read_header_type(file_span, &op_found, &header_type);
+		CHECK_RET_F(header_type_read);
+		CHECK_RET_F(op_found);
+		if(header_type != mk::rosbag::header_type::chunk)
+		{
+			std::uint32_t const header_len = mk::rosbag::read<std::uint32_t>(file_span);
+			mk::rosbag::consume(file_span, header_len);
+			CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+			std::uint32_t const data_len = mk::rosbag::read<std::uint32_t>(file_span);
+			mk::rosbag::consume(file_span, data_len);
+			continue;
+		}
+		mk::rosbag::header_chunk_t header_chunk;
+		bool const header_chunk_read = mk::rosbag::read_header(file_span, &header_chunk);
+		CHECK_RET_F(header_chunk_read);
+		CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+		std::uint32_t const data_len = mk::rosbag::read<std::uint32_t>(file_span);
+		mk::rosbag::span_t chunk_data{file_span.m_ptr, data_len};
+		mk::rosbag::consume(file_span, data_len);
+		bool header_index_data_found = false;
+		mk::rosbag::header_index_data_t header_index_data{};
+		for(;;)
+		{
+			bool op_found_2;
+			mk::rosbag::header_type header_type_2;
+			bool const header_type_read_2 = mk::rosbag::read_header_type(file_span, &op_found_2, &header_type_2);
+			CHECK_RET_F(header_type_read_2);
+			CHECK_RET_F(op_found_2);
+			if(header_type_2 != mk::rosbag::header_type::index_data)
+			{
+				break;
+			}
+			bool const header_index_data_read = mk::rosbag::read_header(file_span, &header_index_data);
+			CHECK_RET_F(header_index_data_read);
+			if(header_index_data.m_conn == connection && header_index_data.m_ver == 1)
+			{
+				header_index_data_found = true;
+				break;
+			}
+			CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+			std::uint32_t const data_len_2 = mk::rosbag::read<std::uint32_t>(file_span);
+			mk::rosbag::consume(file_span, data_len_2);
+		}
+		CHECK_RET_F(header_index_data_found);
+		CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+		std::uint32_t const index_data_len = mk::rosbag::read<std::uint32_t>(file_span);
+		CHECK_RET_F(index_data_len == header_index_data.m_count * (sizeof(std::uint64_t) + sizeof(std::uint32_t)));
+		mk::rosbag::span_t index_data_span{file_span.m_ptr, index_data_len};
+		mk::rosbag::consume(file_span, index_data_len);
+
+		LZ4F_dctx* ctx;
+		auto const ctx_created = LZ4F_createDecompressionContext(&ctx, LZ4F_VERSION);
+		CHECK_RET_F(ctx_created == 0);
+		auto ctx_free = mk::make_scope_exit([&](){ auto const ctx_freed = LZ4F_freeDecompressionContext(ctx); CHECK_RET_V(ctx_freed == 0); });
+		std::vector<unsigned char> decompressed_data;
+		decompressed_data.resize(header_chunk.m_size);
+		std::size_t dst_size = decompressed_data.size();
+		std::size_t src_size = chunk_data.m_len;
+		auto const decompressed = LZ4F_decompress(ctx, decompressed_data.data(), &dst_size, chunk_data.m_ptr, &src_size, nullptr);
+		CHECK_RET_F(decompressed == 0);
+		CHECK_RET_F(dst_size == decompressed_data.size());
+		CHECK_RET_F(src_size == chunk_data.m_len);
+		ctx_free.reset();
+		auto const ctx_freed = LZ4F_freeDecompressionContext(ctx);
+		CHECK_RET_F(ctx_freed == 0);
+
+		for(std::uint32_t i = 0; i != header_index_data.m_count; ++i)
+		{
+			std::uint64_t const time = mk::rosbag::read<std::uint64_t>(index_data_span);
+			std::uint32_t const offset = mk::rosbag::read<std::uint32_t>(index_data_span);
+			CHECK_RET_F(header_chunk.m_size >= offset);
+			CHECK_RET_F(header_chunk.m_size >= offset + 12000);
+
+			mk::rosbag::span_t packet_span{decompressed_data.data() + offset, header_chunk.m_size - offset};
+			bool ht_op;
+			mk::rosbag::header_type ht;
+			bool const ht_read = mk::rosbag::read_header_type(packet_span, &ht_op, &ht);
+			CHECK_RET_F(ht_read);
+			CHECK_RET_F(ht_op);
+			CHECK_RET_F(ht == mk::rosbag::header_type::message_data);
+			mk::rosbag::header_message_data_t header_message_data;
+			bool const header_message_data_read = mk::rosbag::read_header(packet_span, &header_message_data);
+			CHECK_RET_F(header_message_data_read);
+			CHECK_RET_F(header_message_data.m_conn == connection);
+			CHECK_RET_F(header_message_data.m_time == time);
+			CHECK_RET_F(packet_span.m_len >= sizeof(std::uint32_t));
+			std::uint32_t const message_data_len = mk::rosbag::read<std::uint32_t>(packet_span);
+			CHECK_RET_F(message_data_len == 12613);
+			mk::rosbag::span_t message_data_span{packet_span.m_ptr, message_data_len};
+			mk::rosbag::consume(message_data_span, 4);
+			std::uint64_t const timestamp = mk::rosbag::read<std::uint64_t>(message_data_span);
+			(void)timestamp;
+		}
+	}
+
 	return true;
 }
 
@@ -315,135 +424,57 @@ bool mk::rosbag_pcap::detail::find_ouster_lidar_connection(mk::rosbag::span_t co
 	assert(out_connection);
 
 	mk::rosbag::span_t file_span = orig_file_span;
-	CHECK_RET_F(has_magic(file_span));
-	consume_magic(file_span);
 
-	detail::header_t header;
-	header.m_bag = detail::header_bag_t{};
-	unsigned header_filled = 0;
+	bool const has_magic = mk::rosbag::has_magic(file_span);
+	CHECK_RET_F(has_magic);
+	mk::rosbag::consume_magic(file_span);
 
-	bool op_found = false;
-	CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
-	std::uint32_t header_len = read<std::uint32_t>(file_span);
-	mk::rosbag::span_t header_span = mk::rosbag::span_t{file_span.m_ptr, header_len};
-	while(header_span.m_len != 0)
-	{
-		CHECK_RET_F(header_span.m_len >= sizeof(std::uint32_t));
-		std::uint32_t const field_len = read<std::uint32_t>(header_span);
-		CHECK_RET_F(field_len <= header_span.m_len);
-		char const* const field_begin = static_cast<char const*>(header_span.m_ptr);
-		char const* const field_end = field_begin + field_len;
-		auto const field_name_end = std::find(field_begin, field_end, '=');
-		CHECK_RET_F(field_name_end != field_end);
-		CHECK_RET_F(field_name_end != field_begin);
-		CHECK_RET_F(std::all_of(field_begin, field_name_end, detail::is_ascii));
-		std::uint32_t const field_name_len = static_cast<std::uint32_t>(field_name_end - field_begin);
-		consume(header_span, field_name_len + 1);
-		std::uint32_t const field_data_len = field_len - field_name_len - 1;
-		if(detail::is_field_op_name(field_begin, field_name_end))
-		{
-			CHECK_RET_F(field_data_len == sizeof(detail::field_op_type));
-			detail::field_op_type const op = read<detail::field_op_type>(header_span);
-			CHECK_RET_F(op == static_cast<detail::field_op_type>(detail::op_code::bag));
-			op_found = true;
-		}
-		else if(detail::is_field_bag_index_pos_name(field_begin, field_name_end))
-		{
-			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_index_pos_type));
-			detail::field_bag_index_pos_type const val = read<detail::field_bag_index_pos_type>(header_span);
-			CHECK_RET_F((header_filled & detail::s_field_bag_index_pos_position_idx) == 0);
-			header_filled |= detail::s_field_bag_index_pos_position_idx;
-			header.m_bag.m_index_pos = val;
-		}
-		else if(detail::is_field_bag_conn_count_name(field_begin, field_name_end))
-		{
-			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_conn_count_type));
-			detail::field_bag_conn_count_type const val = read<detail::field_bag_conn_count_type>(header_span);
-			CHECK_RET_F((header_filled & detail::s_field_bag_conn_count_position_idx) == 0);
-			header_filled |= detail::s_field_bag_conn_count_position_idx;
-			header.m_bag.m_conn_count = val;
-		}
-		else if(detail::is_field_bag_chunk_count_name(field_begin, field_name_end))
-		{
-			CHECK_RET_F(field_data_len == sizeof(detail::field_bag_chunk_count_type));
-			detail::field_bag_chunk_count_type const val = read<detail::field_bag_chunk_count_type>(header_span);
-			CHECK_RET_F((header_filled & detail::s_field_bag_chunk_count_position_idx) == 0);
-			header_filled |= detail::s_field_bag_chunk_count_position_idx;
-			header.m_bag.m_chunk_count = val;
-		}
-	}
+	bool op_found;
+	mk::rosbag::header_type ht;
+	bool const ht_read = mk::rosbag::read_header_type(file_span, &op_found, &ht);
+	CHECK_RET_F(ht_read);
 	CHECK_RET_F(op_found);
-	CHECK_RET_F(header_filled == detail::s_header_bag_positions);
-	CHECK_RET_F(header.m_bag.m_index_pos <= orig_file_span.m_len);
-	CHECK_RET_F(header.m_bag.m_index_pos <= 0xFFFFFFFF); // size_t
+	CHECK_RET_F(ht == mk::rosbag::header_type::bag);
+
+	mk::rosbag::header_bag_t header_bag;
+	bool const header_bag_read = mk::rosbag::read_header(file_span, &header_bag);
+	CHECK_RET_F(header_bag_read);
 
 	file_span = orig_file_span;
-	consume(file_span, static_cast<std::size_t>(header.m_bag.m_index_pos));
+	CHECK_RET_F(header_bag.m_index_pos <= (std::numeric_limits<std::size_t>::max)());
+	CHECK_RET_F(file_span.m_len >= static_cast<std::size_t>(header_bag.m_index_pos));
+	mk::rosbag::consume(file_span, static_cast<std::size_t>(header_bag.m_index_pos));
 
-	field_bag_conn_count_type const conn_count = header.m_bag.m_conn_count;
-	header.m_connection = detail::header_connection_t{};
-	for(field_bag_conn_count_type connection_i = 0; connection_i!= conn_count; ++connection_i)
+	for(std::uint32_t i = 0; i != header_bag.m_conn_count; ++i)
 	{
-		header_filled = 0;
-		op_found = false;
-		CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
-		header_len = read<std::uint32_t>(file_span);
-		header_span = mk::rosbag::span_t{file_span.m_ptr, header_len};
-		while(header_span.m_len != 0)
-		{
-			CHECK_RET_F(header_span.m_len >= sizeof(std::uint32_t));
-			std::uint32_t const field_len = read<std::uint32_t>(header_span);
-			CHECK_RET_F(field_len <= header_span.m_len);
-			char const* const field_begin = static_cast<char const*>(header_span.m_ptr);
-			char const* const field_end = field_begin + field_len;
-			auto const field_name_end = std::find(field_begin, field_end, '=');
-			CHECK_RET_F(field_name_end != field_end);
-			CHECK_RET_F(field_name_end != field_begin);
-			CHECK_RET_F(std::all_of(field_begin, field_name_end, detail::is_ascii));
-			std::uint32_t const field_name_len = static_cast<std::uint32_t>(field_name_end - field_begin);
-			consume(header_span, field_name_len + 1);
-			std::uint32_t const field_data_len = field_len - field_name_len - 1;
-			if(detail::is_field_op_name(field_begin, field_name_end))
-			{
-				CHECK_RET_F(field_data_len == sizeof(detail::field_op_type));
-				detail::field_op_type const op = read<detail::field_op_type>(header_span);
-				CHECK_RET_F(op == static_cast<detail::field_op_type>(detail::op_code::connection));
-				op_found = true;
-			}
-			else if(detail::is_field_connection_conn_name(field_begin, field_name_end))
-			{
-				CHECK_RET_F(field_data_len == sizeof(detail::field_connection_conn_type));
-				detail::field_connection_conn_type const val = read<detail::field_connection_conn_type>(header_span);
-				CHECK_RET_F((header_filled & detail::s_field_connection_conn_position_idx) == 0);
-				header_filled |= detail::s_field_connection_conn_position_idx;
-				header.m_connection.m_conn = val;
-			}
-			else if(detail::is_field_connection_topic_name(field_begin, field_name_end))
-			{
-				detail::field_connection_topic_type const val = {field_name_end + 1, static_cast<int>(field_data_len)};
-				CHECK_RET_F(std::all_of(val.m_begin, val.m_begin + val.m_len, detail::is_ascii));
-				CHECK_RET_F((header_filled & detail::s_field_connection_topic_position_idx) == 0);
-				header_filled |= detail::s_field_connection_topic_position_idx;
-				header.m_connection.m_topic = val;
-				consume(header_span, field_data_len);
-			}
-		}
-		CHECK_RET_F(op_found);
-		CHECK_RET_F(header_filled == detail::s_header_connection_positions);
-		if(header.m_connection.m_topic.m_len == s_ouster_lidar_topic_name_len && std::memcmp(header.m_connection.m_topic.m_begin, s_ouster_lidar_topic_name, s_ouster_lidar_topic_name_len) == 0)
+		bool connection_header_op_found;
+		mk::rosbag::header_type connection_header_type;
+		bool const connection_header_type_read = mk::rosbag::read_header_type(file_span, &connection_header_op_found, &connection_header_type);
+		CHECK_RET_F(connection_header_type_read);
+		CHECK_RET_F(connection_header_op_found);
+		CHECK_RET_F(connection_header_type == mk::rosbag::header_type::connection);
+
+		mk::rosbag::header_connection_t connection_header;
+		bool const connection_header_read = mk::rosbag::read_header(file_span, &connection_header);
+		CHECK_RET_F(connection_header_read);
+
+		static constexpr char const s_os[] = "/os_node/lidar_packets";
+		static constexpr int const s_os_len = static_cast<int>(std::size(s_os)) - 1;
+		if(connection_header.m_topic.m_len == s_os_len && std::memcmp(connection_header.m_topic.m_begin, s_os, s_os_len) == 0)
 		{
 			*out_found = true;
-			*out_connection = header.m_connection.m_conn;
+			*out_connection = connection_header.m_conn;
 			return true;
 		}
-		consume(file_span, header_len);
 
-		std::uint32_t const record_data_len = read<std::uint32_t>(file_span);
-		CHECK_RET_F(record_data_len <= file_span.m_len);
-		consume(file_span, record_data_len);
+		CHECK_RET_F(file_span.m_len >= sizeof(std::uint32_t));
+		std::uint32_t const connection_data_len = mk::rosbag::read<std::uint32_t>(file_span);
+		CHECK_RET_F(file_span.m_len >= connection_data_len);
+		mk::rosbag::consume(file_span, connection_data_len);
 	}
 
-	return false;
+	*out_found = false;
+	return true;
 }
 
 

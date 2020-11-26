@@ -99,8 +99,19 @@ namespace mk
 			header_chunk_info_t m_chunk_info;
 		};
 
+		typedef string_t field_connection_data_topic_t;
+		typedef string_t field_connection_data_type_t;
+		typedef string_t field_connection_data_md5sum_t;
+		typedef string_t field_connection_data_message_definition_t;
+		struct header_connection_data_t
+		{
+			field_connection_data_topic_t m_topic;
+			field_connection_data_type_t m_type;
+			field_connection_data_md5sum_t m_md5sum;
+			field_connection_data_message_definition_t m_message_definition;
+		};
 
-		bool read_header_type(span_t& file_span, bool* const out_op_found, header_type* const out_header_type);
+		bool read_header_type(span_t file_span, bool* const out_op_found, header_type* const out_header_type);
 		bool read_header(span_t& file_span, header_type const header_type, header_t* const out_header);
 		bool read_header(span_t& file_span, header_bag_t* const out_header);
 		bool read_header(span_t& file_span, header_chunk_t* const out_header);
@@ -108,6 +119,7 @@ namespace mk
 		bool read_header(span_t& file_span, header_message_data_t* const out_header);
 		bool read_header(span_t& file_span, header_index_data_t* const out_header);
 		bool read_header(span_t& file_span, header_chunk_info_t* const out_header);
+		bool read_header(span_t& file_span, header_connection_data_t* const out_header);
 
 
 	}
